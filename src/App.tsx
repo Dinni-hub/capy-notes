@@ -29,7 +29,8 @@ import {
   Square,
   CheckSquare,
   Paperclip,
-  File
+  File,
+  Pin
 } from 'lucide-react';
 
 interface Attachment {
@@ -50,6 +51,9 @@ interface Note {
   align: 'left' | 'center' | 'right' | 'justify';
   listType: 'none' | 'bullet-disc' | 'bullet-circle' | 'bullet-square' | 'bullet-arrow' | 'bullet-check' | 'number-decimal' | 'number-bracket' | 'number-roman' | 'number-roman-bracket' | 'number-roman-lower' | 'number-alpha-upper' | 'number-alpha-upper-bracket' | 'number-alpha-lower' | 'number-alpha-lower-dot' | 'number-roman-lower-bracket' | 'todo';
   attachments?: Attachment[];
+  isPinned?: boolean;
+  isFavorite?: boolean;
+  timestampLog?: string;
 }
 
 const BULLET_STYLES = [
@@ -106,6 +110,7 @@ export default function App() {
   const [isAdding, setIsAdding] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [timestampLog, setTimestampLog] = useState('');
   const [currentTheme, setCurrentTheme] = useState('theme-classic');
 
   // Form state
@@ -161,14 +166,58 @@ export default function App() {
     return line.replace(/^([•○■➢✓]|\d+[\.\)]|[IVXLCDMivxlcdm]+[\.\)]|[A-Za-z][\.\)]|\[[ x]\])\s*/, '');
   };
 
+  const getListType = (marker: string): Note['listType'] => {
+    if (!marker) return 'none';
+    if (marker.includes('•')) return 'bullet-disc';
+    if (marker.includes('○')) return 'bullet-circle';
+    if (marker.includes('■')) return 'bullet-square';
+    if (marker.includes('➢')) return 'bullet-arrow';
+    if (marker.includes('✓')) return 'bullet-check';
+    if (/^\d+\.\s/.test(marker)) return 'number-decimal';
+    if (/^\d+\)\s/.test(marker)) return 'number-bracket';
+    if (/^[IVXLCDM]+\.\s/.test(marker)) return 'number-roman';
+    if (/^[IVXLCDM]+\)\s/.test(marker)) return 'number-roman-bracket';
+    if (/^[ivxlcdm]+\.\s/.test(marker)) return 'number-roman-lower';
+    if (/^[A-Z]\.\s/.test(marker)) return 'number-alpha-upper';
+    if (/^[A-Z]\)\s/.test(marker)) return 'number-alpha-upper-bracket';
+    if (/^[a-z]\)\s/.test(marker)) return 'number-alpha-lower';
+    if (/^[a-z]\.\s/.test(marker)) return 'number-alpha-lower-dot';
+    if (/^[ivxlcdm]+\)\s/.test(marker)) return 'number-roman-lower-bracket';
+    if (/^\[[ x]\]\s/.test(marker)) return 'todo';
+    return 'none';
+  };
+
+  const getListIndex = (lines: string[], lineIndex: number, type: Note['listType']) => {
+    let index = 0;
+    for (let i = lineIndex - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (line.trim() === '' || /^─+ \d{2}\.\d{2} ─+$/.test(line.trim())) {
+        continue; // Skip empty lines and timestamp separators
+      }
+      
+      const stripped = stripMarkers(line);
+      const marker = line.substring(0, line.length - stripped.length);
+      if (!marker) break; // A non-empty line without a marker breaks the list
+      
+      if (getListType(marker) === type) {
+        index++;
+      } else {
+        break; // Different list type breaks the list
+      }
+    }
+    return index;
+  };
+
   // Apply formatting to the entire content
   const applyFormatting = (text: string, type: Note['listType']) => {
     if (type === 'none') {
       return text.split('\n').map(stripMarkers).join('\n');
     }
-    return text.split('\n').map((line, i) => {
+    const lines = text.split('\n');
+    return lines.map((line, i) => {
       const stripped = stripMarkers(line);
-      return stripped ? getMarker(type, i) + stripped : '';
+      const listIndex = getListIndex(lines, i, type);
+      return stripped ? getMarker(type, listIndex) + stripped : '';
     }).join('\n');
   };
 
@@ -211,7 +260,8 @@ export default function App() {
         lines[lineIndex] = '[ ] ' + stripped;
       }
     } else {
-      const newMarker = getMarker(type, lineIndex);
+      const listIndex = getListIndex(lines, lineIndex, type);
+      const newMarker = getMarker(type, listIndex);
 
       // Toggle logic: if same marker, remove it. If different or none, replace/add.
       if (currentMarker.trim() === newMarker.trim()) {
@@ -262,25 +312,20 @@ export default function App() {
         }
 
         // Determine list type from marker to get next marker
-        let detectedType: Note['listType'] = 'none';
-        if (marker.includes('•')) detectedType = 'bullet-disc';
-        else if (marker.includes('○')) detectedType = 'bullet-circle';
-        else if (marker.includes('■')) detectedType = 'bullet-square';
-        else if (marker.includes('➢')) detectedType = 'bullet-arrow';
-        else if (marker.includes('✓')) detectedType = 'bullet-check';
-        else if (/^\d+\.\s/.test(marker)) detectedType = 'number-decimal';
-        else if (/^\d+\)\s/.test(marker)) detectedType = 'number-bracket';
-        else if (/^[IVXLCDM]+\.\s/.test(marker)) detectedType = 'number-roman';
-        else if (/^[IVXLCDM]+\)\s/.test(marker)) detectedType = 'number-roman-bracket';
-        else if (/^[ivxlcdm]+\.\s/.test(marker)) detectedType = 'number-roman-lower';
-        else if (/^[A-Z]\.\s/.test(marker)) detectedType = 'number-alpha-upper';
-        else if (/^[A-Z]\)\s/.test(marker)) detectedType = 'number-alpha-upper-bracket';
-        else if (/^[a-z]\)\s/.test(marker)) detectedType = 'number-alpha-lower';
-        else if (/^[a-z]\.\s/.test(marker)) detectedType = 'number-alpha-lower-dot';
-        else if (/^[ivxlcdm]+\)\s/.test(marker)) detectedType = 'number-roman-lower-bracket';
-        else if (/^\[[ x]\]\s/.test(marker)) detectedType = 'todo';
+        const detectedType = getListType(marker);
 
-        const nextMarker = getMarker(detectedType, linesBefore.length);
+        let nextMarker = '';
+        if (detectedType === 'number-decimal') {
+           const match = marker.match(/^(\d+)\.\s/);
+           if (match) nextMarker = `${parseInt(match[1], 10) + 1}. `;
+        } else if (detectedType === 'number-bracket') {
+           const match = marker.match(/^(\d+)\)\s/);
+           if (match) nextMarker = `${parseInt(match[1], 10) + 1}) `;
+        } else {
+           const listIndex = getListIndex(linesBefore, linesBefore.length, detectedType);
+           nextMarker = getMarker(detectedType, listIndex);
+        }
+
         const newValue = beforeCursor + '\n' + nextMarker + afterCursor;
         
         setContent(newValue);
@@ -389,48 +434,97 @@ export default function App() {
     document.body.className = currentTheme;
   }, [currentTheme]);
 
+  const handleSaveAndClose = () => {
+    if (editingNote) {
+      let finalContent = content;
+      const separatorRegex = /\n*─+ \d{2}\.\d{2} ─+\n*$/;
+      if (separatorRegex.test(finalContent)) {
+        finalContent = finalContent.replace(separatorRegex, '');
+      }
+
+      const updatedNotes = notes.map(n => 
+        n.id === editingNote.id 
+          ? { ...n, title: title || 'Untitled Note', content: finalContent, color: selectedColor, font: selectedFont, align: selectedAlign, listType: selectedList, attachments: attachments.length > 0 ? attachments : undefined, timestampLog } 
+          : n
+      );
+      setNotes(updatedNotes);
+    } else {
+      if (title.trim() || content.trim() || attachments.length > 0) {
+        const newNote: Note = {
+          id: crypto.randomUUID(),
+          title: title || 'Untitled Note',
+          content,
+          date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
+          color: selectedColor,
+          font: selectedFont,
+          align: selectedAlign,
+          listType: selectedList,
+          attachments: attachments.length > 0 ? attachments : undefined,
+          timestampLog
+        };
+        setNotes([newNote, ...notes]);
+      }
+    }
+    resetForm();
+  };
+
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() && !content.trim() && attachments.length === 0) return;
-
-    const newNote: Note = {
-      id: crypto.randomUUID(),
-      title: title || 'Untitled Note',
-      content,
-      date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
-      color: selectedColor,
-      font: selectedFont,
-      align: selectedAlign,
-      listType: selectedList,
-      attachments: attachments.length > 0 ? attachments : undefined
-    };
-
-    setNotes([newNote, ...notes]);
-    resetForm();
+    handleSaveAndClose();
   };
 
   const handleUpdateNote = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingNote) return;
-
-    const updatedNotes = notes.map(n => 
-      n.id === editingNote.id 
-        ? { ...n, title, content, color: selectedColor, font: selectedFont, align: selectedAlign, listType: selectedList, attachments: attachments.length > 0 ? attachments : undefined } 
-        : n
-    );
-
-    setNotes(updatedNotes);
-    resetForm();
+    handleSaveAndClose();
   };
 
   const deleteNote = (id: string) => {
     setNotes(notes.filter(n => n.id !== id));
   };
 
+  const togglePin = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setNotes(notes.map(n => n.id === id ? { ...n, isPinned: !n.isPinned } : n));
+  };
+
+  const toggleFavorite = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setNotes(notes.map(n => n.id === id ? { ...n, isFavorite: !n.isFavorite } : n));
+  };
+
   const startEditing = (note: Note) => {
     setEditingNote(note);
     setTitle(note.title);
-    setContent(note.content);
+    
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace(':', '.');
+    const fullDateStr = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    
+    let currentLog = note.timestampLog || '';
+    let currentContent = note.content || '';
+    
+    if (!currentLog) {
+      currentLog = `${fullDateStr}, ${timeStr}`;
+    } else {
+      const hasToday = currentLog.includes(fullDateStr);
+      
+      if (!hasToday) {
+        // Different day -> add to log above title
+        currentLog = `${currentLog}\n${fullDateStr}, ${timeStr}`;
+      } else {
+        // Same day -> add separator in content
+        const isSameMinute = currentLog.includes(`${fullDateStr}, ${timeStr}`) || new RegExp(`─+ ${timeStr} ─+`).test(currentContent);
+        
+        if (!isSameMinute && currentContent.trim().length > 0) {
+          const prefix = currentContent.endsWith('\n') ? '' : '\n';
+          currentContent = `${currentContent}${prefix}\n─── ${timeStr} ───\n`;
+        }
+      }
+    }
+    
+    setTimestampLog(currentLog);
+    setContent(currentContent);
+    
     setSelectedColor(note.color);
     setSelectedFont(note.font || FONTS[0].value);
     setSelectedAlign(note.align || 'left');
@@ -442,6 +536,7 @@ export default function App() {
   const resetForm = () => {
     setTitle('');
     setContent('');
+    setTimestampLog('');
     setSelectedColor(COLORS[0]);
     setSelectedFont(FONTS[0].value);
     setSelectedAlign('left');
@@ -451,10 +546,22 @@ export default function App() {
     setEditingNote(null);
   };
 
+  const handleAddNewNote = () => {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace(':', '.');
+    const fullDateStr = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    setTimestampLog(`${fullDateStr}, ${timeStr}`);
+    setIsAdding(true);
+  };
+
   const filteredNotes = notes.filter(note => 
     note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     note.content.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ).sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    return 0; // Keep original order (which is newest first based on how we add)
+  });
 
   const renderContent = (note: Note) => {
     const lines = note.content.split('\n');
@@ -496,6 +603,18 @@ export default function App() {
               </div>
             );
           }
+          
+          if (/^─+ \d{2}\.\d{2} ─+$/.test(line.trim())) {
+            const timeMatch = line.match(/\d{2}\.\d{2}/);
+            return (
+              <div key={i} className="flex items-center gap-3 my-3 opacity-40">
+                <div className="flex-1 h-[1px] bg-current"></div>
+                <span className="text-xs font-bold tracking-widest">{timeMatch?.[0]}</span>
+                <div className="flex-1 h-[1px] bg-current"></div>
+              </div>
+            );
+          }
+          
           return <p key={i} className="text-sm whitespace-pre-wrap">{line}</p>;
         })}
         
@@ -576,11 +695,24 @@ export default function App() {
                 className="capy-card p-5 flex flex-col gap-3 relative group overflow-hidden cursor-pointer"
                 style={{ backgroundColor: note.color }}
               >
+                {note.timestampLog && (
+                  <div className="text-xs text-brown-900/60 font-medium whitespace-pre-wrap mb-1">
+                    {note.timestampLog}
+                  </div>
+                )}
                 <div className="flex justify-between items-start">
-                  <h3 className={`font-bold text-brown-900 text-lg leading-tight ${note.font}`}>{note.title}</h3>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => startEditing(note)} className="p-1.5 hover:bg-black/5 rounded-lg text-brown-700"><Edit3 className="w-4 h-4" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); deleteNote(note.id); }} className="p-1.5 hover:bg-red-500/10 rounded-lg text-red-600"><Trash2 className="w-4 h-4" /></button>
+                  <h3 className={`font-bold text-brown-900 text-lg leading-tight flex-1 pr-2 ${note.font}`}>{note.title}</h3>
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={(e) => togglePin(e, note.id)} 
+                      className={`p-1.5 rounded-lg transition-all ${note.isPinned ? 'text-brown-900 bg-black/10' : 'text-brown-700 opacity-0 group-hover:opacity-100 hover:bg-black/5'}`}
+                    >
+                      <Pin className={`w-4 h-4 ${note.isPinned ? 'fill-current' : ''}`} />
+                    </button>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => startEditing(note)} className="p-1.5 hover:bg-black/5 rounded-lg text-brown-700"><Edit3 className="w-4 h-4" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); deleteNote(note.id); }} className="p-1.5 hover:bg-red-500/10 rounded-lg text-red-600"><Trash2 className="w-4 h-4" /></button>
+                    </div>
                   </div>
                 </div>
                 
@@ -593,7 +725,12 @@ export default function App() {
                     <Calendar className="w-3 h-3" />
                     {note.date}
                   </div>
-                  <Heart className="w-4 h-4 text-brown-300 fill-current" />
+                  <button 
+                    onClick={(e) => toggleFavorite(e, note.id)}
+                    className={`p-1.5 rounded-full transition-all hover:scale-110 ${note.isFavorite ? 'text-red-500' : 'text-brown-900/20 hover:text-red-400'}`}
+                  >
+                    <Heart className={`w-4 h-4 ${note.isFavorite ? 'fill-current' : ''}`} />
+                  </button>
                 </div>
               </motion.div>
             ))}
@@ -617,7 +754,7 @@ export default function App() {
       <motion.button
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
-        onClick={() => setIsAdding(true)}
+        onClick={handleAddNewNote}
         className="fixed bottom-8 right-8 w-16 h-16 bg-[#3e2723] text-white rounded-full shadow-2xl flex items-center justify-center z-20"
       >
         <Plus className="w-8 h-8" />
@@ -627,13 +764,14 @@ export default function App() {
       <AnimatePresence>
         {isAdding && (
           <div className="fixed inset-0 z-50 flex items-center justify-center sm:p-4 overflow-y-auto">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={resetForm} className="fixed inset-0 bg-black/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={handleSaveAndClose} className="fixed inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.div
               initial={{ opacity: 0, y: 50, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 50, scale: 0.95 }}
               className="relative w-full h-full sm:h-auto sm:max-w-2xl bg-white sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col"
               style={{ backgroundColor: selectedColor }}
+              onClick={() => setActiveDropdown(null)}
             >
               <div className="p-4 sm:p-8 overflow-y-auto flex-1 no-scrollbar">
                 <div className="flex flex-col items-center mb-4 sm:mb-8">
@@ -657,7 +795,7 @@ export default function App() {
                     {editingNote ? <Edit3 className="w-5 h-5 sm:w-6 sm:h-6" /> : <StickyNote className="w-5 h-5 sm:w-6 sm:h-6" />}
                     {editingNote ? 'Edit Catatan' : 'Catatan Baru'}
                   </h2>
-                  <button onClick={resetForm} className="p-2 hover:bg-black/5 rounded-full text-brown-700"><X className="w-6 h-6" /></button>
+                  <button onClick={handleSaveAndClose} className="p-2 hover:bg-black/5 rounded-full text-brown-700"><X className="w-6 h-6" /></button>
                 </div>
 
                 {/* Custom Dropdown Toolbar */}
@@ -883,6 +1021,11 @@ export default function App() {
                 </div>
 
                 <form onSubmit={editingNote ? handleUpdateNote : handleAddNote} className="space-y-4">
+                  {timestampLog && (
+                    <div className="text-sm text-brown-900/60 font-medium whitespace-pre-wrap mb-2">
+                      {timestampLog}
+                    </div>
+                  )}
                   <input
                     type="text"
                     placeholder="Judul"
